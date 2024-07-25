@@ -1,0 +1,46 @@
+#!/bin/sh -e
+##:
+#h: Usage: iso-raspberry ...
+#h:
+#h: Download images to ${DDIR:-${TEMP:-/tmp}}.
+#h:
+#h: ... raspios/rpi{3,4}     : Download "img.xz". (user: pi, pass: raspberry)
+#h: ... debian/12/rpi{2,3,4} : Download Debian 12 for RPI{2,3,4} (User:root)
+#h: ... openbsd/7.4/rpi4     : Download OpenBSD 7.4 for RPI4.
+##:
+iso_raspberry() {
+    local m_raspios="https://downloads.raspberrypi.org/raspios_arm64/images"
+    local m_debian="https://raspi.debian.net/daily"
+    local m_openbsd="https://ftp.fr.openbsd.org/pub/OpenBSD"
+    local cmd="$1"
+    shift
+    case "${cmd}" in
+        list) cat <<-EOF
+		raspios/rpi{3,4}
+		debian/12/rpi{2,3,4}
+		EOF
+            ;;
+        raspios/rpi3|raspios/rpi4) wgetd "${m_raspios}/raspios_arm64-2022-09-26/2022-09-22-raspios-bullseye-arm64.img.xz";;
+        debian/12/rpi2)            wgetd "${m_debian}/raspi_2_bookworm.img.xz"   ;;
+        debian/12/rpi3)            wgetd "${m_debian}/raspi_3_bookworm.img.xz"   ;;
+        debian/12/rpi4)            wgetd "${m_debian}/raspi_4_bookworm.img.xz"   ;;
+        openbsd/7.4/rpi4)          wgetd "${m_openbsd}/7.4/arm64/miniroot74.img" ;;
+        *) echo >&2 "error: Invalid argument: ${cmd}"; return 1;;
+    esac
+}
+## -------------------------------------------------------------------
+wgetd() {
+    local f="${DDIR:-${TEMP:-/tmp}}/$(basename "$1")"
+    if test ! -f "${f}"; then
+        ${VAULT} wget -O "${f}.tmp" "${1}"
+        mv "${f}.tmp" "${f}"
+    fi >&2
+    echo "${f}"
+}
+## -------------------------------------------------------------------
+if test @"$(basename "$0")" = @"iso-raspberry"; then
+    case "${1}" in
+        ''|-h|--help) sed -n 's/^ *#h: \{0,1\}//p' "$0" ;;
+        *)            iso_raspberry "$@"; exit 0        ;;
+    esac
+fi

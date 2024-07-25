@@ -1,0 +1,82 @@
+#!/bin/sh -e
+##:
+#h: Usage: qemu-h-rpi3 IMAGE QEMU-ARGS...
+#h:
+#h: Launch qemu emulating a Raspberry PI 3b+. This program uses lomount(1)
+#h: to extract the kernel and the dtb file from the image.
+#h:
+#h: Known dtbs    : bcm2710-rpi-3-b-plus.dtb (raspios)
+#h: Known kernels : kernel8.img
+#h: SSH localhost port : 2222
+##:
+. lomount
+qemu_h_rpi3() {
+    local image="$1" mnt="/mnt" tmp="/tmp" dtb= kernel= cmdline= f
+    if test ! -n "${image}"; then
+        echo >&2 "error: Please specify an image."
+        return 1
+    fi
+
+    ## Mount image.
+    sudo umount "${mnt}" || true
+    lomount -n 1 "${image}" "${mnt}"
+    {
+        ## Search dtb.
+        for f in bcm2710-rpi-3-b-plus.dtb; do
+            if test -f "${mnt}/${f}"; then
+                dtb="${f}"
+                break
+            fi
+        done
+        
+        ## Search kernel.
+        for f in kernel8.img; do
+            if test -f "${mnt}/${f}"; then
+                kernel="${f}"
+                break
+            fi
+        done
+        
+        ## Search command line.
+        for f in cmdline.txt; do
+            if test -f "${mnt}/${f}"; then
+                cmdline="$(cat "${mnt}/${f}")"
+                break
+            fi
+        done
+        
+        ## Check all are available.
+        test -n "${dtb}"    || echo >&2 "error: ${image}: No dtb found."
+        test -n "${kernel}" || echo >&2 "error: ${image}: No kernel found."
+        for f in ${dtb} ${kernel}; do
+            cp -v "${mnt}/${f}" "${tmp}/${f}"
+        done
+    }
+    ## Umount image.
+    sudo umount "${mnt}" || true
+    if test ! -n "${dtb}" || test ! -n "${kernel}"; then
+        return 1
+    fi
+    
+    ## Execute.
+    qemu-system-aarch64            \
+        -M raspi3b                 \
+        -append "${cmdline}"       \
+        -dtb "${tmp}/${dtb}"       \
+        -kernel "${tmp}/${kernel}" \
+        -m 1G -smp 4               \
+        -usb -device usb-mouse -device usb-kbd \
+        -device usb-net,netdev=net0 \
+        -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+        "$@"
+    return 0
+}
+## -------------------------------------------------------------------
+if test @"${SCRNAME:-$(basename "$0")}" = @"qemu-h-rpi3"; then
+    case "${1}" in
+        ''|-h|--help) sed -n 's/^ *#h: \{0,1\}//p' "$0";;
+        *)            qemu_h_rpi3 "$@"; exit 0;;
+    esac
+fi
+## https://raspberrypi.stackexchange.com/questions/117234/how-to-emulate-raspberry-pi-in-qemu
+## https://gist.github.com/cGandom/23764ad5517c8ec1d7cd904b923ad863

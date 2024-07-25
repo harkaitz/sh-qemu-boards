@@ -1,0 +1,68 @@
+#!/bin/sh -e
+##:
+#h: Usage: lomount [-v][-n NUM][-o OPTIONS] DRIVE [DIRECTORY]
+#h:
+#h: Mount the NUM'th partition in DRIVE image in DIRECTORY (by default /mnt).
+#h:
+#h: Dependencies: sudo(1), fdisk(1), mount(1).
+##:
+lomount() {
+    local OPTIND optopt drive directory awk num=1 opts="" start="" end="" sudo="" IFS
+    unset IFS
+    
+    ## Parse command line arguments.
+    while getopts "vn:o:" optopt; do
+        case $optopt in
+            v)  local VERBOSE="y";;
+            n)  num="${OPTARG}";;
+            o)  opts="${OPTARG}";;
+            \?) return 1;;
+        esac
+    done
+    shift $(( $OPTIND - 1 ))
+    drive="$1" directory="${2:-/mnt}"
+    
+    ## Require a drive.
+    if test ! -n "${drive}"; then
+        echo >&2 "error: Please specify a device."
+        return 1
+    elif test ! -e "${drive}"; then
+        echo >&2 "error: ${drive}: Does not exist."
+        return 1
+    fi
+    
+    ## Get partition bounds.
+    awk='$1 == k { print $2, $3 }'
+    read -r start end ign <<-EOF
+	$(fdisk -l "${drive}" | awk -v k="${drive}${num}" "${awk}")
+	EOF
+    if test ! -n "${start}" || test ! -n "${end}"; then
+        echo >&2 "error: ${drive}:${num}: Partition not found."
+        return 1
+    fi
+    
+    ## Calculate options.
+    opts=loop,offset=$(( start * 512 )),sizelimit=$(( end *512 ))"${opts:+,${opts}}"
+    
+    ## Use sudo when available.
+    if which sudo >/dev/null 2>&1; then
+        sudo="sudo"
+    fi
+    
+    
+    ## Execute command.
+    if test -n "${VERBOSE}"; then
+        echo "${sudo:+${sudo} }mount -o '${opts}' ${drive} ${directory}"
+    fi
+    ${sudo} mount -o "${opts}" "${drive}" "${directory}"
+    
+    ##
+    return 0
+}
+## -------------------------------------------------------------------
+if test @"${SCRNAME:-$(basename "$0")}" = @"lomount"; then
+    case "${1}" in
+        ''|-h|--help) sed -n 's/^ *#h: \{0,1\}//p' "$0";;
+        *)            lomount "$@"; exit 0;;
+    esac
+fi
